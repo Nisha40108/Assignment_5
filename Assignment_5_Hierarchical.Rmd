@@ -1,0 +1,290 @@
+---
+title: 'Assignment Hierarchical Clustering '
+author: "Nisha Chaurasia"
+date: "2023-04-12"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Loading Required Packages
+```{r}
+#rm(list = ls()) #cleaning the environment
+library(readr)
+library(tidyverse)
+library(caret)
+library(knitr)
+library(class)  
+library(ggplot2)
+library(ggcorrplot)
+library(dplyr)
+library(e1071)
+library(reshape2)
+library(caret)
+library(factoextra)
+library(cluster)
+library(cowplot)
+library(pander)
+library(kernlab)
+library(tidyr)
+library(fastDummies)
+library(FactoMineR)
+```
+
+```{r}
+#Importing the Cereals data set, Also I have changed the Cereal name to keep it short.
+cereals_data = read.csv("C:/Users/Chaur/OneDrive/Desktop/FML/Assignment_5_Hierarchical/Cereals.CSV")
+head(cereals_data)
+tail(cereals_data)
+```
+
+```{r}
+#Understanging the structure and summary of the data
+str(cereals_data)#The dataset has 77 observations of 16 variables
+t(t(names(cereals_data)))#column number 
+summary(cereals_data)
+```
+#Data Pre-processing
+```{r}
+#Removing missing values
+sum(is.na(cereals_data))#Find the number of missing values and either impute or omit them
+colSums(is.na(cereals_data)) #There are 4 missing values in "dataset", 1 in "Carbo", 1 in sugar and 2 in "potass"
+cereals_data2 <- na.omit(cereals_data) # removed the missing values
+colMeans(is.na(cereals_data2))#It removed the missing values from 77 variables to 74
+cereals_name <- cereals_data2[,c(1,2)]#For the full name of cereals
+cereals_name
+```
+
+```{r}
+#It shows us the column name of Cereal’s dataset changed from column to row name
+cereals_data3 <- as.data.frame(cereals_data2)
+row.names(cereals_data3) <- cereals_data3[,2]
+cereals_data4 <- cereals_data3[,-2]
+cereals_data5 <- cereals_data4[, c(4:12,14:16)]#Select only the numerical variables. Remove Shelf variable also because it’s categorical.
+cereals_data5 <- scale(cereals_data5)#Normalize the data using scale function
+head(cereals_data5)#To see the first 6 rows
+dim(cereals_data5)
+View(cereals_data5)
+```
+#Q1:(PartA):Using Euclidean distance to the normalized measurements
+```{r}
+distance_table <- get_dist(cereals_data5)#Compute the distances.Remember Euclidean distance is used by default.
+fviz_dist(distance_table)#Let’s visualize our distances. The fviz_dist() function visualizes a distance matrix
+#This graph is a distance matrix. As we can see, the diagonal values are zeros (dark orange) because it is showing the distance between any point against itself. The purple and blue represent the furthest distance between any pair of observations.
+```
+```{r}
+#Looking at the Correlation between Variables.
+corr <- cor(cereals_data5)
+ggcorrplot(corr, outline.color = "grey50", lab = TRUE, hc.order = TRUE, type = "full")
+#Sugar and calories are highly negatively correlated with rating. Also, Potass is highly positively correlated with fiber and Protien.
+```
+
+```{r}
+#Trying to Understand the variable variance by performing principle component analysis
+pca_cereal <- PCA(cereals_data5)#perform principal component analysis
+pca_cereal <- prcomp(cereals_data5, scale = TRUE) #variable has mean zero and standard deviation one
+loadings <- pca_cereal$rotation #extract loading
+print(loadings[, 1:2])#print loading for the first two PCs
+var <- get_pca_var(pca_cereal)
+fviz_pca_var(pca_cereal, col.var="contrib",
+gradient.cols = c("grey","yellow","purple","red","blue"),ggrepel = TRUE ) + labs( title = "PCA Variable Variance")
+#From PCA Variable Variance, we can infer that Sugar , calories, protien potass and fiber contribute more in the two PCA components/dimensions (Variables).
+```
+
+```{r}
+#let's see the K value using Kmeans first. Using Both the values elbow and silhouette to see K value.
+library(cowplot)
+Elbow_method <- fviz_nbclust(cereals_data5, kmeans, method = "wss")
+Silhouette <- fviz_nbclust(cereals_data5, kmeans, method = "silhouette")
+plot_grid(Elbow_method, Silhouette, nrow = 1)#Both the methods are giving k = 10.
+```
+```{r}
+set.seed(2023)
+k10 <- kmeans(cereals_data5, centers = 10, nstart = 25) # k = 10, number of restarts = 25
+k5 <- kmeans(cereals_data5, centers = 5, nstart = 25) # k = 5, number of restarts = 25
+k10$centers
+k10$size
+fviz_cluster(k10, data = cereals_data5)
+#After applying both the silhouette method and elbow method, we obtained K value as 10, which we used to plot the 10 clusters. However, upon observing the plot, we noticed that some of the clusters were overlapping, indicating that using only K-means clustering may not be the best option for optimization. Therefore, we will apply hierarchical clustering to obtain an optimal number of clusters.
+```
+
+#Q1:(PartB) Apply hierarchical clustering. Use Agnes to compare the clustering from single linkage, completelinkage, average linkage, and Ward. Choose the best method.
+```{r}
+set.seed(2023)
+hierarchical_cluster <- hclust(distance_table, method = "complete" )# Hierarchical clustering using Complete Linkage
+plot(hierarchical_cluster, cex = 0.6, hang = -1,main = "Dendrogram of Hierarchical Clustering")#Plot the obtained dendrogram
+rect.hclust(hierarchical_cluster, k = 10, border = 2:10)
+#The dendrogram helps us to define the number of clusters needed to classify this dataset.
+```
+
+```{r}
+#Alternatively, we can use the agnes()function
+set.seed(2023)
+#Compute with AGNES and with different linkage methods
+hc_single <- agnes(distance_table, method = "single")
+hc_complete <- agnes(distance_table, method = "complete")
+hc_average <- agnes(distance_table, method = "average")
+hc_ward <- agnes(distance_table, method = "ward")
+# Compare AGNES (agglomerative) coefficients
+print(hc_single$ac)
+print(hc_complete$ac)
+print(hc_average$ac)
+print(hc_ward$ac)
+#These outputs affirm that the best agglomerative (AGNES) linkage to use is the Ward linkage, which gives 90.87% accuracy.
+```
+#Q2: How many clusters would you choose? 
+```{r}
+#Utilizing the Ward linkage, 5 clusters seem to be a good number to group the data
+set.seed(2023)
+fviz_dend(hc_ward, k = 5,main = "Dendrogram of AGNES (Ward)",cex = 0.5, k_colors = c("black", "purple", "darkgreen", "darkorange", "darkred"), color_labels_by_k = TRUE,labels_track_height = 16,ggtheme = theme_bw())#Plot the Dendrogram of AGNES
+cereals_data6_5 <- cutree(hc_ward, k = 5)
+Clustered_df <-as.data.frame(cbind ( cereals_data5, cereals_data6_5 ))
+```
+#Q3:Comment on the structure of the clusters and their stability. Hint: To check stability, partition the data, and see how well clusters formed based on one part apply to the other part.
+#Q3: PartA: Cluster partition A
+```{r}
+#We will partition the dataset into two groups: Training A and Validation B.
+set.seed(2023)# To get the same random variables
+TrainingA <-cereals_data5 [1:55,]
+nrow(TrainingA)
+summary(TrainingA)#to see the descriptive statistics of the TrainingA dataset
+ValidationB <-cereals_data5 [56:74,]
+nrow(ValidationB)
+summary(ValidationB)#to see the descriptive statistics of the ValidationB dataset
+```
+
+```{r}
+# Compute the distances. Remember Euclidean distance is used by default.Looking at the cluster of trainingA and ValidationB data set. 
+set.seed(2023)# To maintain same values
+distance_TrainA <- get_dist(TrainingA)
+# Compute with AGNES and with different linkage methods For Training Dataset
+hc_single_TrainA <- agnes(distance_TrainA, method = "single")
+hc_complete_TrainA <- agnes(distance_TrainA, method = "complete")
+hc_average_TrainA <- agnes(distance_TrainA, method = "average")
+hc_ward_TrainA <- agnes(distance_TrainA, method = "ward")
+print(hc_single_TrainA$ac)
+print(hc_complete_TrainA$ac)
+print(hc_average_TrainA$ac)
+print(hc_ward_TrainA$ac)#It allows us to determine that the best linkage is Ward with 88.91% accuracy for validationA
+```
+
+```{r}
+## Compute with AGNES and with different linkage methods For Training Dataset
+set.seed(2023)# To maintain same values
+distance_ValidB <- get_dist(ValidationB)
+hc_single_ValidB <- agnes(distance_ValidB, method = "single")
+hc_complete_ValidB <- agnes(distance_ValidB, method = "complete")
+hc_average_ValidB <- agnes(distance_ValidB, method = "average")
+hc_ward_ValidB <- agnes(distance_ValidB, method = "ward")
+# Compare AGNES (agglomerative) coefficients
+print(hc_single_ValidB$ac)
+print(hc_complete_ValidB$ac)
+print(hc_average_ValidB$ac)
+print(hc_ward_ValidB$ac)#It allows us to determine that the best linkage is Ward with 77.10% accuracy for TrainingB
+```
+```{r}
+#Dendrogram for TrainingA and ValidationB dataset 
+fviz_dend(hc_ward_TrainA, k = 5,main = "Training A -Dendrogram of AGNES",cex = 0.5, k_colors = c("black", "purple", "darkgreen", "darkorange", "darkred"), color_labels_by_k = TRUE,labels_track_height = 16,ggtheme = theme_bw())#Plot the Dendrogram of AGNES
+fviz_dend(hc_ward_ValidB, k = 5,main = "Validation B- Dendrogram of AGNES",cex = 0.5, k_colors = c("black", "purple", "darkgreen", "darkorange", "darkred"), color_labels_by_k = TRUE,labels_track_height = 16,ggtheme = theme_bw())#Plot the Dendrogram of AGNES
+```
+#Q3:PartB: Method1 Use the cluster centroids from A to assign each record in partition B (each record is assigned to the cluster with the closest centroid)
+```{r}
+Clustered_df_A <-cutree (hc_ward_TrainA, k=5)
+Clusters_A <-as.data.frame(cbind(TrainingA, Clustered_df_A))
+nrow(Clusters_A)#55
+Clust_1 <- colMeans (Clusters_A [Clusters_A$ Clustered_df_A == "1" ,])#This results in a vector of mean values for each column of the data, which represents the centroid of cluster 1 
+Clustered_df_B <-cutree (hc_ward_ValidB, k=5)
+Clusters_B <-as.data.frame(cbind(ValidationB, Clustered_df_B))
+nrow(Clusters_B)#55
+Clust_2 <- colMeans (Clusters_B [Clusters_B$ Clustered_df_B == "1" ,])#This results in a vector of mean values for each column of the data, which represents the centroid of cluster 2 
+Centroid <-rbind(Clust_1, Clust_2)
+Centroid 
+#On overall level the both the cluster seems fine but also a slight difference is - 
+#Cluster_1 has a higher fiber and potassium content compared to Cluster_2, which may suggest that cereals in this cluster are healthier or more nutrient-dense.Cluster_2 has a higher sugar content compared to 
+#Cluster_1, which may suggest that cereals in this cluster are less healthy or have more added sugars.
+```
+#Q3:PartB: Method2 Use the cluster centroids from A to assign each record in partition B (each record is assigned to the cluster with the closest centroid)
+```{r}
+#In order to predict the calculate distances between each record in data set B and the cluster centroids
+distances <- dist(ValidationB[, -1], TrainingA, method = "euclidean")#This line calculates the pairwise distances between the validation and the training samples, using the Euclidean distance metric.
+hc <- hclust(distances)#This line performs hierarchical clustering on the distances object, using the default "complete" linkage method
+clusterB <- cutree(hc, k = 5)#This line cuts the hierarchical tree into five clusters based on the hc object, using the cutree()
+ValidationB$cluster <- clusterB #This line adds a new column to the ValidationB data frame called "cluster"
+ValidationB$cluster
+#The predicted clusters of B on the basis of centroids of A almost classified same except 3 cereals which are "special_K", "Total_CF" and "Total_WG". Out of 19 only 3 observation changed their cluster after comparing the validation data set with Training dataset.It means the stability of clusters are really high.
+```
+#Q3:PartC: Assess how consistent the cluster assignments are compared to the assignments based on all the data
+```{r}
+#Method 1: We are comparing the mean values of each feature for the two clusters identified in the two datasets. These centroids can be used to compare the features of the two clusters and explore differences or similarities between them.Here we can see that Cluster_1 has a higher fiber and potassium content compared to Cluster_2, which may suggest that cereals in this cluster are healthier or more nutrient-dense.Cluster_2 has a higher sugar content compared to Cluster_1, which may suggest that cereals in this cluster are less healthy or have more added sugars hence cluster 2 rating is really low compared to cluster 1.
+
+#Method 2:This method calculates the pairwise Euclidean distances between the records in the ValidationB dataset and the cluster centroids obtained from the TrainingA dataset using hierarchical clustering with complete linkage method.This enables the prediction of the cluster labels for the validation dataset using the centroids obtained from the training dataset. hence we can see the stability of validation data set on the basis of training dataset. We can see the cereals are cluster exactly the same except "special_K", "Total_CF" and "Total_WG". Out of 19 only 3 observation changed their cluster after comparing the validation data set with Training dataset.It means the stability of clusters are really high.
+```
+
+#Q4:The elementary public schools would like to choose a set of cereals to include in their daily cafeterias. Every day a different cereal is offered, but all cereals should support a healthy diet. For this goal, you are requested to find a cluster of “healthy cereals.”Should the data be normalized? If not, how should they be used in the cluster analysis?
+```{r}
+#To analyze which group of cereals are healthier to distribute daily in cafeterias in elementary public schools,we will use the non-standardized dataset. In my opinion, it is more meaningful and easier to compare if we look at the variables in their original scale.Here is a table summarizing the number of cereals per cluster:
+Healthy_data <-as.data.frame(cbind ( cereals_data2, cereals_data6_5 ))
+Healthy_data_sort <- Healthy_data[order(Healthy_data$cereals_data6_5),c(1,18) ]
+Count_cluster <- Healthy_data_sort %>% group_by(cereals_data6_5) %>% summarise(count = n())
+print(Count_cluster)
+
+#Summary table showing the median of each variable
+Healthy_data_Var <- Healthy_data [,5:18]
+cluster_table <- Healthy_data_Var %>% group_by(cereals_data6_5) %>% summarize(across(.cols = everything(), .fns = median))
+print(cluster_table)
+```
+```{r}
+# Create bar graph
+calories <- ggplot(cluster_table, aes(x = cereals_data6_5, y = calories)) + 
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "Cluster", y = "Calories") +
+  ggtitle("Cluster by Calories")
+
+protein <- ggplot(cluster_table, aes(x = cereals_data6_5, y = protein)) + 
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Cluster", y = "protein") +
+  ggtitle("Cluster by Protein")
+
+fat <- ggplot(cluster_table, aes(x = cereals_data6_5, y = fat)) + 
+  geom_bar(stat = "identity", fill = "orange") +
+  labs(x = "Cluster", y = "fat") +
+  ggtitle("Cluster by Fat")
+
+sodium <- ggplot(cluster_table, aes(x = cereals_data6_5, y = sodium)) + 
+  geom_bar(stat = "identity", fill = "pink") +
+  labs(x = "Cluster", y = "sodium") +
+  ggtitle("Cluster by sodium")
+
+fiber <- ggplot(cluster_table, aes(x = cereals_data6_5, y = fiber)) + 
+  geom_bar(stat = "identity", fill = "gray") +
+  labs(x = "Cluster", y = "fiber") +
+  ggtitle("Cluster by fiber")
+
+carbo <- ggplot(cluster_table, aes(x = cereals_data6_5, y = carbo)) + 
+  geom_bar(stat = "identity", fill = "brown") +
+  labs(x = "Cluster", y = "carbo") +
+  ggtitle("Cluster by carbo")
+
+sugars <- ggplot(cluster_table, aes(x = cereals_data6_5, y = sugars)) + 
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  labs(x = "Cluster", y = "sugars") +
+  ggtitle("Cluster by sugars")
+
+potass <- ggplot(cluster_table, aes(x = cereals_data6_5, y = potass)) + 
+  geom_bar(stat = "identity", fill = "yellow") +
+  labs(x = "Cluster", y = "potass") +
+  ggtitle("Cluster by potass")
+
+rating <- ggplot(cluster_table, aes(x = cereals_data6_5, y = rating)) + 
+  geom_bar(stat = "identity", fill = "black") +
+  labs(x = "Cluster", y = "rating") +
+  ggtitle("Cluster by rating")
+
+plot_grid(calories, protein, fat, sodium, fiber, carbo, sugars, potass, rating)
+#Based on the graphs, we can see that Cluster 1 has the lowest values for calories, fat, and sugars and the highest values for protein, fiber, and vitamins, which suggests that it may contain cereals that are generally considered healthier options and thats why it has very high rating as well. That why Cluster 1 fits the needs of our client! Nevertheless, part of our client’s petition is to have a different cereal per day, which this cluster does not satisfy this need. For this reason, we will also recommend cluster 5 to satisfy this request. Cluster 5 has zero fats, Zero sugars, and it has the second-lowest number of calories after cluster 1. It also has a good number of proteins and fiber.On the other hand, Cluster 3 has the highest values for calories and sugars and the lowest values for protein, fiber, and vitamins, which suggests that it may contain cereals that are generally considered less healthy. we saw the same insight from our correlation plot high sugar less rating because its less healthy.  However, it's important to note that this is just a general observation and individual cereals within each cluster may vary in terms of their nutritional value.
+```
+
+
